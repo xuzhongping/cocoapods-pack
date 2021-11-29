@@ -8,3 +8,4 @@ out
 samples/CLIConsumer/build
 samples/CLIConsumer/Pods
 samples/CLIConsumer/Podfile.lock
+vendor/
