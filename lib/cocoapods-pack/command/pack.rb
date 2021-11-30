@@ -95,6 +95,7 @@ module Pod
         @source_urls = argv.option('sources', Config.instance.sources_manager.all.map(&:url).join(',')).split(',')
         @use_json = argv.flag?('use-json', false)
         @build_settings_memoized = {}
+        # {平台名 => 沙盒实例}
         @sandbox_map = {}
         @project_files_dir = nil
         @project_zips_dir = nil
@@ -109,12 +110,15 @@ module Pod
 
       def run
         podspec = Specification.from_file(podspec_to_pack)
+        # 输出的工程目录
         @project_files_dir = File.expand_path(File.join(@out_dir, 'files', podspec.name, podspec.version.to_s))
+        # 输出的压缩包目录
         @project_zips_dir = File.expand_path(File.join(@out_dir, 'zips', podspec.name, podspec.version.to_s))
         @artifact_repo_url ||= podspec.attributes_hash['artifact_repo_url']
         FileUtils.mkdir_p(@project_files_dir)
         FileUtils.mkdir_p(@project_zips_dir)
         help! 'Must supply an artifact repo url.' unless @artifact_repo_url
+        # stage_dir用来保存构建的分平台的临时xcframework还有其他资源文件
         stage_dir = File.join(@project_files_dir, 'staged')
         FileUtils.rm_rf(stage_dir)
         FileUtils.mkdir_p(stage_dir)
@@ -145,10 +149,11 @@ module Pod
       def install(podfile, platform, podspec)
         UI.puts "\nInstalling #{podspec.name} for #{platform.name}...\n\n".yellow
         original_config = config.clone
+        # Pods安装位置
         config.installation_root = Pathname.new(File.join(@project_files_dir, 'sandbox', platform.name.to_s))
-
+        # 创建沙盒
         sandbox = Sandbox.new(config.sandbox_root)
-
+        # 通过沙盒和podfile创建Installer
         installer = Installer.new(sandbox, podfile)
         installer.repo_update = @repo_update
         installer.use_default_plugins = false
@@ -160,6 +165,7 @@ module Pod
         installer.podfile.installation_options.warn_for_multiple_pod_sources = false
         installer.install!
 
+        # 恢复conifg单例
         Config.instance = original_config
         sandbox
       end
