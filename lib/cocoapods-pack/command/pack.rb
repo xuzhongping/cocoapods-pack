@@ -110,19 +110,21 @@ module Pod
 
       def run
         podspec = Specification.from_file(podspec_to_pack)
-        # 输出的工程目录
+        @podspec = podspec
+        # 输出的工程文件根目录
         @project_files_dir = File.expand_path(File.join(@out_dir, 'files', podspec.name, podspec.version.to_s))
-        # 输出的压缩包目录
+        # 输出的压缩包根目录
         @project_zips_dir = File.expand_path(File.join(@out_dir, 'zips', podspec.name, podspec.version.to_s))
         @artifact_repo_url ||= podspec.attributes_hash['artifact_repo_url']
         FileUtils.mkdir_p(@project_files_dir)
         FileUtils.mkdir_p(@project_zips_dir)
         help! 'Must supply an artifact repo url.' unless @artifact_repo_url
-        # stage_dir用来保存构建的分平台的临时xcframework还有其他资源文件
+        # stage_dir用来保存中间文件（构建的分平台的临时xcframework还有其他资源文件）
         stage_dir = File.join(@project_files_dir, 'staged')
         FileUtils.rm_rf(stage_dir)
         FileUtils.mkdir_p(stage_dir)
         source_urls = @source_urls.map { |url| Config.instance.sources_manager.source_with_name_or_url(url) }.map(&:url)
+        # 分平台构建xcframework
         available_platforms(podspec).each do |platform|
           linkage = @use_static_frameworks ? :static : :dynamic
           podfile = podfile_from_spec(platform, podspec, source_urls, linkage, @is_local)
@@ -341,6 +343,7 @@ module Pod
       def copy_vendored_artifacts(podspec, attribute, stage_dir)
         platforms = Pod::Specification::DSL::PLATFORMS
         hash = podspec.attributes_hash
+        # 所有需要拷贝的vendored资源
         globs = [Array(hash[attribute])] + platforms.map { |p| Array((hash[p.to_s] || {})[attribute]) }
         globs.flatten.to_set.each { |glob| stage_glob(glob, stage_dir) }
       end
@@ -375,7 +378,7 @@ module Pod
         return if podspec.license[:text]
 
         license_spec = podspec.license[:file]
-        license_file = license_spec ? File.join(podspec_dir, license_spec) : lookup_default_license_file
+        license_file = license_spec ? File.join(pod_dir, license_spec) : lookup_default_license_file
         return unless license_file
 
         stage_file(license_file, stage_dir)
@@ -386,18 +389,18 @@ module Pod
       end
 
       def stage_glob(glob, stage_dir)
-        glob = File.join(glob, '**', '*') if File.directory?(File.join(podspec_dir, glob))
+        glob = File.join(glob, '**', '*') if File.directory?(File.join(pod_dir, glob))
         podspec_dir_relative_glob(glob).each { |file_path| stage_file(file_path, stage_dir) }
       end
 
       def podspec_dir_relative_glob(glob, options = {})
-        Pod::Sandbox::PathList.new(Pathname(podspec_dir)).glob(glob, options)
+        Pod::Sandbox::PathList.new(Pathname(pod_dir)).glob(glob, options)
       end
 
       def stage_file(file_path, stage_dir)
         pathname = Pathname(file_path)
 
-        relative_path_file = pathname.relative_path_from(Pathname(podspec_dir)).dirname.to_path
+        relative_path_file = pathname.relative_path_from(Pathname(pod_dir)).dirname.to_path
         raise Informative, "Bad Relative path #{relative_path_file}" if relative_path_file.start_with?('..')
 
         staged_folder = File.join(stage_dir, relative_path_file)
@@ -410,6 +413,10 @@ module Pod
 
       def podspec_dir
         File.expand_path(File.dirname(podspec_to_pack))
+      end
+
+      def pod_dir
+        @is_local ? podspec_dir : @sandbox_map.values.map { |sandbox| sandbox.pod_dir(@podspec.name)  }.first.to_path
       end
 
       def copy_headers(sandbox, target, stage_dir)
